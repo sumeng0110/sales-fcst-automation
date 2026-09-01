@@ -101,6 +101,38 @@ python src\cut_wo_adj.py --period '7+5' --apply
 python src\scm.py --from '6+6' --to '7+5' --apply
 ```
 
+## Local Web UI
+
+The `web/` folder contains a small local FastAPI app that exposes the same
+workflow as browser-friendly APIs. It is meant to run on the same machine that
+can reach the finance share and automate Excel.
+
+Start it from the project root:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn web.app:app --port 8765
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765
+```
+
+The UI/API supports:
+
+- listing existing forecast periods and suggesting the next period;
+- previewing and applying the period-folder copy;
+- previewing and applying workbook external-link rewrites;
+- checking HFM / Smart View grid freshness;
+- triggering Excel recalculation;
+- comparing two workbooks;
+- uploading newly received input files into the target period folder.
+
+Long-running actions are started as background jobs. The browser polls
+`/api/jobs/{job_id}` for progress logs and final results, so copy/refresh tasks
+can keep running without blocking the page.
+
 ## Safety Notes
 
 - The scripts default to preview mode where possible; use `--apply` to write.
@@ -217,6 +249,34 @@ python src\scm.py --from '6+6' --to '7+5' --create --apply
 python src\cut_wo_adj.py --period '7+5' --apply
 python src\scm.py --from '6+6' --to '7+5' --apply
 ```
+
+## 本地网页界面
+
+`web/` 文件夹里是一个本地 FastAPI 应用，把同一套自动化流程包装成浏览器可以调用的 API。它应该运行在能访问共享盘、也能调用本机 Excel 的电脑上。
+
+在项目根目录启动：
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn web.app:app --port 8765
+```
+
+然后浏览器打开：
+
+```text
+http://127.0.0.1:8765
+```
+
+网页 / API 支持：
+
+- 列出已有预测期间，并建议下一个期间；
+- 预览和执行期间文件夹复制；
+- 预览和执行工作簿外部链接重指；
+- 检查 HFM / Smart View 网格是否覆盖目标实际月份；
+- 触发 Excel 重算；
+- 比较两个工作簿；
+- 把新收到的输入文件上传到目标期间目录。
+
+复制、重算、比较这类耗时动作会作为后台任务运行。前端通过 `/api/jobs/{job_id}` 轮询进度日志和最终结果，所以页面不用一直卡住等 Excel 或共享盘。
 
 ## 安全说明
 
