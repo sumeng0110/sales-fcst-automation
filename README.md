@@ -278,6 +278,10 @@ http://127.0.0.1:8765
 
 复制、重算、比较这类耗时动作会作为后台任务运行。前端通过 `/api/jobs/{job_id}` 轮询进度日志和最终结果，所以页面不用一直卡住等 Excel 或共享盘。
 
+<img width="1606" height="1000" alt="Local Web UI workflow" src="https://github.com/user-attachments/assets/b6db7ae7-8eb6-4049-9b03-806a4edff43b" />
+
+<img width="1605" height="1003" alt="Local Web UI actions" src="https://github.com/user-attachments/assets/e34429b9-40af-4083-bbe7-9bbbd828d4c2" />
+
 ## 安全说明
 
 - 脚本尽量默认只预览，真正写入需要加 `--apply`。
