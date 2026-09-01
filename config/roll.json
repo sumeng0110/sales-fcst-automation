@@ -1,0 +1,42 @@
+{
+  "share_prefix": "\\\\fileserver.example.com\\Finance",
+  "managed_root": "\\Shared Finance Root",
+  "year_token": "CY26",
+  "fiscal_year": 2026,
+  "months_in_year": 12,
+  "pinned_periods": ["0+12"],
+  "rename_patterns": ["^P110 Sales_China", "^P110A Sales_Greater China", "^P120 Interco sales_China"],
+  "derived_patterns": ["(?i)[-\\s]wo\\s*adj"],
+  "wo_adj": {
+    "suffix": " - wo adj",
+    "blank": [
+      {"workbook": "P110A", "sheet": "AdjustmentSheet", "range": "D672:O672"}
+    ]
+  },
+  "skip_contents": ["feedback"],
+  "period_root": "\\\\fileserver.example.com\\Finance\\Shared Finance Root\\Sales Forecast\\A-P1\\CY26",
+  "scm_root": "\\\\fileserver.example.com\\Finance\\Shared Finance Root\\Sales Forecast\\SCM",
+  "scm_folder": {
+    "rename_patterns": ["^[1-5]\\.", "^Named Account CY\\d\\d \\d"]
+  },
+  "workbooks": [
+    {
+      "id": "P120",
+      "order": 1,
+      "relative_dir": "P1",
+      "name_template": "P120 Interco sales_China CY26 {period} FCST.xlsx"
+    },
+    {
+      "id": "P110A",
+      "order": 2,
+      "relative_dir": "P1",
+      "name_template": "P110A Sales_Greater China CY26 {period} FCST.xlsm"
+    },
+    {
+      "id": "P110",
+      "order": 3,
+      "relative_dir": "P1",
+      "name_template": "P110 Sales_China CY26 {period} FCST.xlsm"
+    }
+  ]
+}

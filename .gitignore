@@ -1,0 +1,22 @@
+.venv/
+.cache/
+.sandbox/
+__pycache__/
+*.py[cod]
+
+# Local configuration and generated outputs
+config/*.local.json
+*.tmp
+~$*
+
+# Source finance workbooks must never be committed
+*.xls
+*.xlsx
+*.xlsm
+*.xlsb
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

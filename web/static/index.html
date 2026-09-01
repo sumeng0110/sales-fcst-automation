@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sales FCST 月度滚动</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark">FCST</span>
+    <div>
+      <h1>月度滚动预测</h1>
+      <p id="rootPath">正在连接共享盘…</p>
+    </div>
+  </div>
+  <div class="periods">
+    <label>从<select id="fromPeriod"></select></label>
+    <span class="arrow">→</span>
+    <label>到<input id="toPeriod" type="text" placeholder="7+5" size="6"></label>
+    <button id="reloadBtn" class="ghost">刷新</button>
+  </div>
+</header>
+
+<main>
+  <section class="stage" data-stage="1">
+    <div class="stage-head">
+      <span class="num">1</span>
+      <div>
+        <h2>复制期间文件夹</h2>
+        <p>从上期目录复制一份，核心工作簿改名到新期间</p>
+      </div>
+      <span class="badge" id="badge1">待开始</span>
+    </div>
+    <div class="stage-body">
+      <div class="actions">
+        <button data-act="plan1">预览计划</button>
+        <button data-act="apply1" class="primary" disabled>执行复制</button>
+        <label class="check"><input type="checkbox" id="includeFeedback"> 同时复制业务反馈旧文件</label>
+      </div>
+      <div class="out" id="out1"></div>
+    </div>
+  </section>
+
+  <section class="stage" data-stage="2">
+    <div class="stage-head">
+      <span class="num">2</span>
+      <div>
+        <h2>重指外部链接</h2>
+        <p>期间推进一格，汇率与输入模板按月份戳推进</p>
+      </div>
+      <span class="badge" id="badge2">待开始</span>
+    </div>
+    <div class="stage-body">
+      <div class="actions">
+        <button data-act="plan2">预览计划</button>
+        <button data-act="apply2" class="primary" disabled>执行重指</button>
+      </div>
+      <div class="out" id="out2"></div>
+    </div>
+  </section>
+
+  <section class="stage" data-stage="3">
+    <div class="stage-head">
+      <span class="num">3</span>
+      <div>
+        <h2>HFM 网格检查</h2>
+        <p>这一步由你在 Smart View 里手动刷新，程序只负责核对是否刷到当期</p>
+      </div>
+      <span class="badge" id="badge3">待开始</span>
+    </div>
+    <div class="stage-body">
+      <div class="actions">
+        <button data-act="check3">检查网格</button>
+      </div>
+      <div class="out" id="out3"></div>
+    </div>
+  </section>
+
+  <section class="stage" data-stage="4">
+    <div class="stage-head">
+      <span class="num">4</span>
+      <div>
+        <h2>Excel 重算</h2>
+        <p>按 P120 → P110A → P110 的顺序刷新链接并全量重算，约 10–25 分钟</p>
+      </div>
+      <span class="badge" id="badge4">待开始</span>
+    </div>
+    <div class="stage-body">
+      <div class="actions">
+        <button data-act="run4" class="primary">开始重算</button>
+        <label class="check"><input type="checkbox" id="skipHfm"> 跳过 HFM 检查（勾稽会失真）</label>
+      </div>
+      <div class="out" id="out4"></div>
+    </div>
+  </section>
+
+  <section class="stage" data-stage="5">
+    <div class="stage-head">
+      <span class="num">5</span>
+      <div>
+        <h2>与上期逐格比对</h2>
+        <p>差异过大的表会标出来，发出去之前先看一眼</p>
+      </div>
+      <span class="badge" id="badge5">待开始</span>
+    </div>
+    <div class="stage-body">
+      <div class="actions">
+        <button data-act="run5">开始比对</button>
+      </div>
+      <div class="out" id="out5"></div>
+    </div>
+  </section>
+
+  <section class="stage upload">
+    <div class="stage-head">
+      <span class="num">+</span>
+      <div>
+        <h2>补充零散文件</h2>
+        <p>邮件收到、还没落到共享盘的文件，拖进来放到新期间的对应目录</p>
+      </div>
+    </div>
+    <div class="stage-body">
+      <div class="actions">
+        <label>目标子目录
+          <select id="uploadFolder">
+            <option value="P1\业务反馈\P110A">P1\业务反馈\P110A</option>
+            <option value="P1\业务反馈\P120">P1\业务反馈\P120</option>
+            <option value="P1\数据处理\P110A">P1\数据处理\P110A</option>
+            <option value="P1">P1</option>
+          </select>
+        </label>
+      </div>
+      <div id="dropzone" class="dropzone">把文件拖到这里，或点击选择</div>
+      <input type="file" id="fileInput" multiple hidden>
+      <div class="out" id="outUpload"></div>
+    </div>
+  </section>
+</main>
+
+<div id="logPanel" class="log-panel hidden">
+  <div class="log-head">
+    <span id="logTitle">运行中</span>
+    <span id="logElapsed" class="elapsed"></span>
+    <button id="logClose" class="ghost">收起</button>
+  </div>
+  <pre id="logBody"></pre>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
