@@ -38,14 +38,15 @@ ROOT = Path(__file__).resolve().parent.parent
 # The handover files are numbered to record the order they must be produced in.
 NUMBERED_RE = re.compile(r"^[1-5]\.")
 
-# SCM stamps the year with two digits ("预测数据2606  6+6.xlsx") where the forecast
-# chain uses four ("202606"), so the main advance_stamp does not see them.
+# Some hand-maintained SCM inputs stamp the year with two digits where the forecast
+# chain uses four, so the main advance_stamp does not see them.
 SHORT_STAMP_RE = re.compile(r"(?<!\d)(\d{2})(0[1-9]|1[0-2])(?!\d)")
 
 # PERIOD_RE refuses a token followed by a dot so that it cannot bite into a version
-# number, but SCM puts the period right before the extension ("转移比例 CY26 5+7.xlsx").
+# number, but SCM can put the period right before the extension.
 # Only a dot that starts another number is still excluded.
 PERIOD_IN_PATH_RE = re.compile(r"(?<![\d.+])(\d{1,2}\+\d{1,2})(?![\d+]|\.\d)")
+VERSION_FOLDER_RE = re.compile(r"v(\d+)", re.I)
 
 
 def period_folder(cfg: dict, period: str) -> str:
@@ -73,6 +74,24 @@ def advance_short_stamp(name: str, rw: Rewriter) -> str:
     return SHORT_STAMP_RE.sub(sub, name)
 
 
+def version_fallback(path: str, fs: NetFS) -> str | None:
+    """Fall back from a missing version folder, e.g. P2/v2 -> P2/v1."""
+    p = PureWindowsPath(path)
+    m = VERSION_FOLDER_RE.fullmatch(p.parent.name)
+    if not m:
+        return None
+    for version in range(int(m.group(1)) - 1, 0, -1):
+        candidate = normalize(str(PureWindowsPath(p.parent.parent, f"v{version}", p.name)))
+        if fs.exists(candidate):
+            return candidate
+    return None
+
+
+def is_manual_source_file(name: str, cfg: dict) -> bool:
+    keywords = cfg.get("scm_folder", {}).get("manual_source_keywords", [])
+    return any(keyword and keyword in name for keyword in keywords)
+
+
 def make_decider(rw: Rewriter, cfg: dict):
     """Decision rules for a handover file, layered on top of the main chain's."""
     scm_root = cfg["scm_root"].rstrip("\\").lower()
@@ -89,14 +108,21 @@ def make_decider(rw: Rewriter, cfg: dict):
 
         p = PureWindowsPath(old_abs)
         perioded_name = advance_periods(p.name, rw)
-        if "预测数据" in p.name:
-            # 预测数据 is prepared by hand for the target period but can still carry
-            # the latest actual month in its YYMM stamp, e.g. "预测数据2606  7+5.xlsx".
+        if is_manual_source_file(p.name, cfg):
+            # Manually supplied target-period inputs can carry an independent YYMM
+            # source stamp. Keep that stamp as supplied, and only roll the period token.
             # Because these are often relative links, the copied workbook already
             # resolves the parent to the target SCM folder; pin the parent there and
-            # only roll the period token in the file name.
+            # only roll the period token in the file name. If that exact YYMM is not
+            # present, use the one manually dropped for the target period.
             name = perioded_name
-            new_abs = normalize(str(PureWindowsPath(period_folder(cfg, rw.to_period), name)))
+            target_folder = period_folder(cfg, rw.to_period)
+            new_abs = normalize(str(PureWindowsPath(target_folder, name)))
+            if not fs.exists(new_abs):
+                matches = [m for m, _ in fs.glob(target_folder, f"*{rw.to_period}*.xlsx")
+                           if is_manual_source_file(PureWindowsPath(m).name, cfg)]
+                if len(matches) == 1:
+                    new_abs = matches[0]
         else:
             name = advance_short_stamp(perioded_name, rw)
             new_abs = normalize(str(PureWindowsPath(advance_periods(str(p.parent), rw), name)))
@@ -122,6 +148,10 @@ def make_decider(rw: Rewriter, cfg: dict):
         if old_abs.lower().startswith(scm_root + "\\"):
             return LinkPlan(link_no, old_abs, new_abs, WAITING,
                             "not in the SCM folder yet; re-run once it is dropped in")
+        fallback = version_fallback(new_abs, fs)
+        if fallback is not None:
+            return LinkPlan(link_no, old_abs, fallback, REPAIRED,
+                            f"{step}, fell back to existing version folder")
         # Another department's tree. It does advance, but its version subfolder is named
         # by hand (v2, "2+10 - v3"), so a target that is not there is not guessed at.
         return LinkPlan(link_no, old_abs, new_abs, UNRESOLVED,
@@ -136,10 +166,11 @@ SKIP_NAMES = {"thumbs.db"}
 def folder_plan(cfg: dict, rw: Rewriter) -> list[tuple[Path, str, str]]:
     """(source file, name in the new folder, action) for building the next period.
 
-    Two families behave differently. The numbered handover files and the named-account
-    workbook are this period's work, so they move on with the period. 转移比例 and
-    预测数据 are a historical series that piles up in every folder, so they keep their
-    names - this month's copies are dropped in later by hand, not produced here.
+    Two families behave differently. The numbered handover files and the configured
+    named-account workbook are this period's work, so they move on with the period.
+    Manually supplied source files are a historical series that piles up in every
+    folder, so they keep their names - this month's copies are dropped in later by hand,
+    not produced here.
     """
     rename_res = [re.compile(p) for p in cfg.get("scm_folder", {}).get("rename_patterns", [])]
     src = period_folder(cfg, rw.from_period)
