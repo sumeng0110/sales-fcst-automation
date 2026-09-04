@@ -29,6 +29,7 @@ from pathlib import Path, PureWindowsPath
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from netfs import NetFS
+from p120_fx import col_index, col_name
 from relink import (MISSING, PINNED, REPAIRED, ROLLED, UNRESOLVED, WAITING, LinkPlan,
                     Rewriter, apply_plan, build_plan, decide, normalize)
 from roll import read_link_targets
@@ -90,6 +91,124 @@ def version_fallback(path: str, fs: NetFS) -> str | None:
 def is_manual_source_file(name: str, cfg: dict) -> bool:
     keywords = cfg.get("scm_folder", {}).get("manual_source_keywords", [])
     return any(keyword and keyword in name for keyword in keywords)
+
+
+def month_col(month: int) -> str:
+    """SCM named workbook month columns: AD is the row label, AE:AP are Jan:Dec."""
+    if not 1 <= month <= 12:
+        raise ValueError(f"month must be 1-12, got {month}")
+    return col_name(col_index("AD") + month)
+
+
+def source_month_folder(cfg: dict, month: int) -> str:
+    template = cfg.get("scm_folder", {}).get("source_month_folder_template", "{month}")
+    return template.format(
+        month=month,
+        month02=f"{month:02d}",
+        year=cfg.get("fiscal_year", ""),
+    )
+
+
+def roll_formula_text(formula: str, rw: Rewriter, cfg: dict) -> str:
+    """Roll external references inside a copied month-column formula."""
+    replacements = [
+        (f"\\{source_month_folder(cfg, rw.from_month)}\\",
+         f"\\{source_month_folder(cfg, rw.to_month)}\\"),
+        (f"{rw.fiscal_year}{rw.from_month:02d}", f"{rw.fiscal_year}{rw.to_month:02d}"),
+        (f"{rw.fiscal_year % 100:02d}{rw.from_month:02d}",
+         f"{rw.fiscal_year % 100:02d}{rw.to_month:02d}"),
+        (rw.from_period, rw.to_period),
+    ]
+    for old, new in replacements:
+        formula = formula.replace(old, new)
+    return formula
+
+
+def named_workbook_patterns(cfg: dict) -> list[re.Pattern]:
+    scm_cfg = cfg.get("scm_folder", {})
+    patterns = scm_cfg.get("named_workbook_patterns")
+    if patterns is None:
+        # Reuse non-numbered rename patterns so local configurations do not need a
+        # second setting for the same SCM workbook family.
+        patterns = [p for p in scm_cfg.get("rename_patterns", []) if not NUMBERED_RE.search(p)]
+    return [re.compile(p) for p in patterns]
+
+
+def named_workbooks(cfg: dict, period: str) -> list[Path]:
+    folder = period_folder(cfg, period)
+    patterns = named_workbook_patterns(cfg)
+    if not patterns:
+        return []
+    try:
+        entries = os.scandir(folder)
+    except OSError:
+        return []
+    with entries as it:
+        return sorted(
+            Path(e.path) for e in it
+            if e.is_file()
+            and not e.name.startswith("~$")
+            and e.name.lower() not in SKIP_NAMES
+            and period in e.name
+            and not NUMBERED_RE.match(e.name)
+            and any(pattern.search(e.name) for pattern in patterns)
+        )
+
+
+def roll_named_workbook(path: Path, rw: Rewriter, cfg: dict, apply: bool,
+                        visible: bool = False, force: bool = False) -> list[tuple[int, str, str]]:
+    """Copy last month's Sheet3 formulas into this month's column and roll links."""
+    import pythoncom
+    import win32com.client as win32
+
+    sheet_name = cfg.get("scm_folder", {}).get("named_sheet", "Sheet3")
+    src_col = month_col(rw.from_month)
+    dst_col = month_col(rw.to_month)
+    row_label_col = "AD"
+    changes: list[tuple[int, str, str]] = []
+
+    pythoncom.CoInitialize()
+    excel = win32.DispatchEx("Excel.Application")
+    excel.Visible = visible
+    excel.DisplayAlerts = False
+    excel.EnableEvents = False
+    excel.AskToUpdateLinks = False
+    try:
+        wb = excel.Workbooks.Open(str(path), UpdateLinks=0, ReadOnly=not apply)
+        try:
+            names = [wb.Worksheets(i).Name for i in range(1, wb.Worksheets.Count + 1)]
+            if sheet_name not in names:
+                raise KeyError(f"sheet {sheet_name!r} not found in {path.name}; workbook has {names}")
+            ws = wb.Worksheets(sheet_name)
+            used = ws.UsedRange
+            first_row = used.Row
+            last_row = used.Row + used.Rows.Count - 1
+
+            for row in range(first_row, last_row + 1):
+                source = ws.Range(f"{src_col}{row}")
+                target = ws.Range(f"{dst_col}{row}")
+                source_formula = source.Formula
+                if not (isinstance(source_formula, str) and source_formula.startswith("=")):
+                    continue
+                if not force and target.Formula not in (None, ""):
+                    continue
+
+                source.Copy(Destination=target)
+                formula = roll_formula_text(str(target.Formula), rw, cfg)
+                target.Formula = formula
+                label = str(ws.Range(f"{row_label_col}{row}").Text)
+                changes.append((row, label, formula))
+
+            excel.CutCopyMode = False
+            if apply:
+                wb.Save()
+        finally:
+            wb.Close(SaveChanges=False)
+    finally:
+        excel.Quit()
+        pythoncom.CoUninitialize()
+
+    return changes
 
 
 def make_decider(rw: Rewriter, cfg: dict):
@@ -261,6 +380,12 @@ def main():
                     help="build the target period's folder instead of re-pointing links")
     ap.add_argument("--validate", action="store_true",
                     help="plan from the source period and diff against the real target files")
+    ap.add_argument("--skip-named-workbook", action="store_true",
+                    help="skip the optional non-numbered SCM workbook month-column roll")
+    ap.add_argument("--force-named-workbook", action="store_true",
+                    help="overwrite target month formulas in the optional non-numbered SCM workbook")
+    ap.add_argument("--visible", action="store_true",
+                    help="show Excel while rolling the optional non-numbered SCM workbook")
     ap.add_argument("--config", default=str(ROOT / "config" / "roll.json"))
     args = ap.parse_args()
 
@@ -340,6 +465,25 @@ def main():
                 tmp.replace(path)
             print(f"    rewrote {len(changed)} link(s)")
         print()
+
+    if not args.skip_named_workbook and not args.validate:
+        books = named_workbooks(cfg, args.to_period)
+        if books:
+            print(f"  optional named workbook month roll ({month_col(rw.from_month)} -> {month_col(rw.to_month)})")
+        for path in books:
+            print(f"    {path.name}")
+            try:
+                changes = roll_named_workbook(
+                    path, rw, cfg, apply=args.apply, visible=args.visible,
+                    force=args.force_named_workbook)
+            except Exception as exc:
+                print(f"      FAILED: {exc}")
+                exit_code = 1
+                continue
+            for row, label, formula in changes:
+                print(f"      row {row:<3} {label[:30]:<30} {formula}")
+            action = "rewrote" if args.apply else "would rewrite"
+            print(f"      {action} {len(changes)} cell(s)")
 
     fs.save()
     if not args.apply and not args.validate:
